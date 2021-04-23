@@ -253,13 +253,16 @@ def _should_not_rerun(item, report, reruns):
 
 def add_test_failure(crashitem):
     f = os.path.join(os.getenv('APPDATA'), 'pytest.log')
-    with open(f, "a") as fp:
+    with open(f, "a+") as fp:
         fp.write(crashitem+'\n')
 
 
 def get_test_failures(crashitem) -> int:
     k = 0
     f = os.path.join(os.getenv('APPDATA'), 'pytest.log')
+    with open(f, "a+") as _:
+        pass
+
     with open(f, "r") as fp:
         for l in fp:
             if l.strip() == crashitem:
