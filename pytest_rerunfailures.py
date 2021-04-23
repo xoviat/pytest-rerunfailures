@@ -1,3 +1,4 @@
+import os
 import re
 import time
 import warnings
@@ -254,6 +255,21 @@ def pytest_handlecrashitem(pending, collection):
     """
     Return the crashitem from pending and collection.
     """
+    # TODO: Emit rerun/fail report if necessary
+
+    # runner = self.config.pluginmanager.getplugin("runner")
+    # fspath = nodeid.split("::")[0]
+    # msg = "worker {!r} crashed while running {!r}".format(worker.gateway.id, nodeid)
+    # rep = runner.TestReport(
+    #     nodeid, (fspath, None, fspath), (), "failed", msg, "???"
+    # )
+    # rep.node = worker
+    # self.config.hook.pytest_runtest_logreport(report=rep)
+
+    f = os.path.join(os.getenv('APPDATA'), 'pytest.log')
+
+    with open(f, "a") as fp:
+        fp.write(collection[pending[0]]+'\n')
 
 
 def pytest_runtest_protocol(item, nextitem):
@@ -274,6 +290,14 @@ def pytest_runtest_protocol(item, nextitem):
     delay = get_reruns_delay(item)
     parallel = hasattr(item.config, "slaveinput") or hasattr(item.config, "workerinput")
     item.execution_count = 0
+
+    f = os.path.join(os.getenv('APPDATA'), 'pytest.log')
+    with open(f, "r") as fp:
+        for _ in fp:
+            item.execution_count += 1
+
+    if item.execution_count >= reruns:
+        return True
 
     need_to_run = True
     while need_to_run:
