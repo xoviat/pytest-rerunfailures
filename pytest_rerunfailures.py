@@ -251,25 +251,40 @@ def _should_not_rerun(item, report, reruns):
     )
 
 
-def pytest_handlecrashitem(pending, collection):
+def add_test_failure(crashitem):
+    f = os.path.join(os.getenv('APPDATA'), 'pytest.log')
+    with open(f, "a") as fp:
+        fp.write(crashitem+'\n')
+
+
+def get_test_failures(crashitem) -> int:
+    k = 0
+    f = os.path.join(os.getenv('APPDATA'), 'pytest.log')
+    with open(f, "r") as fp:
+        for l in fp:
+            if l.strip() == crashitem:
+                k += 1
+    return k            
+
+
+def set_test_reruns(crashitem, reruns):
+    pass
+
+
+def get_test_reruns(crashitem):
+    return 3
+
+
+def pytest_handlecrashitem(crashitem, report, sched):
     """
     Return the crashitem from pending and collection.
     """
-    # TODO: Emit rerun/fail report if necessary
+    reruns = get_test_reruns(crashitem)
+    if get_test_failures(crashitem) < reruns - 1:
+        sched.mark_test_pending(crashitem)
+        report.outcome = "rerun"
 
-    # runner = self.config.pluginmanager.getplugin("runner")
-    # fspath = nodeid.split("::")[0]
-    # msg = "worker {!r} crashed while running {!r}".format(worker.gateway.id, nodeid)
-    # rep = runner.TestReport(
-    #     nodeid, (fspath, None, fspath), (), "failed", msg, "???"
-    # )
-    # rep.node = worker
-    # self.config.hook.pytest_runtest_logreport(report=rep)
-
-    f = os.path.join(os.getenv('APPDATA'), 'pytest.log')
-
-    with open(f, "a") as fp:
-        fp.write(collection[pending[0]]+'\n')
+    add_test_failure(crashitem)
 
 
 def pytest_runtest_protocol(item, nextitem):
@@ -289,12 +304,10 @@ def pytest_runtest_protocol(item, nextitem):
     check_options(item.session.config)
     delay = get_reruns_delay(item)
     parallel = hasattr(item.config, "slaveinput") or hasattr(item.config, "workerinput")
-    item.execution_count = 0
-
-    f = os.path.join(os.getenv('APPDATA'), 'pytest.log')
-    with open(f, "r") as fp:
-        for _ in fp:
-            item.execution_count += 1
+    item_location = item.location
+    item_location_str = (item_location[0] + '::' + item_location[2]).replace('\\','/')
+    item.execution_count = get_test_failures(item_location_str)
+    set_test_reruns(item_location_str, reruns)
 
     if item.execution_count >= reruns:
         return True
