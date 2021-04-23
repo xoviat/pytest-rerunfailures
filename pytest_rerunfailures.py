@@ -250,6 +250,12 @@ def _should_not_rerun(item, report, reruns):
     )
 
 
+def pytest_handlecrashitem(pending, collection):
+    """
+    Return the crashitem from pending and collection.
+    """
+
+
 def pytest_runtest_protocol(item, nextitem):
     """
     Note: when teardown fails, two reports are generated for the case, one for
