@@ -252,14 +252,14 @@ def _should_not_rerun(item, report, reruns):
 
 
 def add_test_failure(crashitem):
-    f = os.path.join(os.getenv('APPDATA'), 'pytest.log')
+    f = 'pytest-rerunfailures.log'
     with open(f, "a+") as fp:
         fp.write(crashitem+'\n')
 
 
 def get_test_failures(crashitem) -> int:
     k = 0
-    f = os.path.join(os.getenv('APPDATA'), 'pytest.log')
+    f = 'pytest-rerunfailures.log'
     with open(f, "a+") as _:
         pass
 
@@ -267,7 +267,7 @@ def get_test_failures(crashitem) -> int:
         for l in fp:
             if l.strip() == crashitem:
                 k += 1
-    return k            
+    return k
 
 
 def set_test_reruns(crashitem, reruns):
@@ -308,7 +308,7 @@ def pytest_runtest_protocol(item, nextitem):
     delay = get_reruns_delay(item)
     parallel = hasattr(item.config, "slaveinput") or hasattr(item.config, "workerinput")
     item_location = item.location
-    item_location_str = (item_location[0] + '::' + item_location[2]).replace('\\','/')
+    item_location_str = (item_location[0] + '::' + item_location[2]).replace('\\', '/')
     item.execution_count = get_test_failures(item_location_str)
     set_test_reruns(item_location_str, reruns)
 
