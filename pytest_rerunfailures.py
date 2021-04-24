@@ -7,6 +7,8 @@ import tempfile
 import pkg_resources
 import pytest
 from _pytest.runner import runtestprotocol
+from sqlitedict import SqliteDict
+from functools import lru_cache
 
 HAS_RESULTLOG = False
 
@@ -283,33 +285,61 @@ def failures_log(config):
         return config.workerinput['failures_log']
 
 
+@lru_cache
+def failures_db(path):
+    return SqliteDict(path)
+
+
+def failures_log_db(config):
+    return failures_db(failures_log(config))
+
+
+DEFAULT_RECORD = {'failures': 0, 'reruns': 3}
+
+
 def add_test_failure(crashitem, config):
-    with open(failures_log(config), "a+") as fp:
-        fp.write(crashitem+'\n')
+    with failures_log_db(config) as db:
+        if crashitem in db:
+            record = db[crashitem]
+        else:
+            record = DEFAULT_RECORD
+        record['failures'] += 1
+        db[crashitem] = record
+        db.commit()
 
 
 def get_test_failures(crashitem, config) -> int:
-    k = 0
-    with open(failures_log(config), "r") as fp:
-        for l in fp:
-            if l.strip() == crashitem:
-                k += 1
-    return k
+    with failures_log_db(config) as db:
+        if crashitem in db:
+            return db[crashitem]['failures']
+        else:
+            return 0
 
 
-def set_test_reruns(crashitem, reruns):
-    pass
+def set_test_reruns(crashitem, reruns, config):
+    with failures_log_db(config) as db:
+        if crashitem in db:
+            record = db[crashitem]
+        else:
+            record = DEFAULT_RECORD
+        record['reruns'] = reruns
+        db[crashitem] = record
+        db.commit()
 
 
-def get_test_reruns(crashitem):
-    return 3
+def get_test_reruns(crashitem, config):
+    with failures_log_db(config) as db:
+        if crashitem in db:
+            return db[crashitem]['reruns']
+        else:
+            return 3
 
 
 def pytest_handlecrashitem(crashitem, report, sched):
     """
     Return the crashitem from pending and collection.
     """
-    reruns = get_test_reruns(crashitem)
+    reruns = get_test_reruns(crashitem, sched.config)
     if get_test_failures(crashitem, sched.config) < reruns - 1:
         sched.mark_test_pending(crashitem)
         report.outcome = "rerun"
@@ -336,7 +366,7 @@ def pytest_runtest_protocol(item, nextitem):
     item_location = item.location
     item_location_str = (item_location[0] + '::' + item_location[2]).replace('\\', '/')
     item.execution_count = get_test_failures(item_location_str, item.session.config)
-    set_test_reruns(item_location_str, reruns)
+    set_test_reruns(item_location_str, reruns, item.session.config)
 
     if item.execution_count >= reruns:
         return True
