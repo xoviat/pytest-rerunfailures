@@ -285,7 +285,7 @@ def failures_log(config):
         return config.workerinput['failures_log']
 
 
-@lru_cache
+@lru_cache(maxsize=5)
 def failures_db(path):
     return SqliteDict(path)
 
