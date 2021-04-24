@@ -278,6 +278,15 @@ def get_test_reruns(crashitem):
     return 3
 
 
+def pytest_sessionstart(session):
+    if hasattr(session.config, 'workerinput'):
+        return
+
+    f = 'pytest-rerunfailures.log'
+    with open(f, "w+") as _:
+        pass
+
+
 def pytest_handlecrashitem(crashitem, report, sched):
     """
     Return the crashitem from pending and collection.
@@ -295,7 +304,6 @@ def pytest_runtest_protocol(item, nextitem):
     Note: when teardown fails, two reports are generated for the case, one for
     the test case and the other for the teardown error.
     """
-
     reruns = get_reruns_count(item)
     if reruns is None:
         # global setting is not specified, and this test is not marked with
