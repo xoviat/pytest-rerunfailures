@@ -9,6 +9,7 @@ import pytest
 from _pytest.runner import runtestprotocol
 from sqlitedict import SqliteDict
 from functools import lru_cache
+from contextlib import contextmanager
 
 HAS_RESULTLOG = False
 
@@ -287,64 +288,62 @@ def failures_log(config):
 
 @lru_cache(maxsize=5)
 def failures_db(path):
-    return SqliteDict(path)
+    return StatusDB(path)
 
 
-def failures_log_db(config):
+def log_db(config):
     return failures_db(failures_log(config))
 
 
-DEFAULT_RECORD = {'failures': 0, 'reruns': 3}
+class StatusDB(object):
+    def __init__(self, path):
+        self.db = SqliteDict(path)
 
+    @contextmanager
+    def _record(self, item):
+        with self.db as db:
+            if item in db:
+                record = db[item]
+            else:
+                record = {'failures': 0, 'reruns': 0}
 
-def add_test_failure(crashitem, config):
-    with failures_log_db(config) as db:
-        if crashitem in db:
-            record = db[crashitem]
-        else:
-            record = DEFAULT_RECORD
-        record['failures'] += 1
-        db[crashitem] = record
-        db.commit()
+        failures, reruns = record['failures'], record['reruns']
+        yield record
+        if record['failures'] == failures and record['reruns'] == reruns:
+            return
 
+        with self.db as db:
+            db[item] = record
+            db.commit()
 
-def get_test_failures(crashitem, config) -> int:
-    with failures_log_db(config) as db:
-        if crashitem in db:
-            return db[crashitem]['failures']
-        else:
-            return 0
+    def add_test_failure(self, crashitem):
+        with self._record(crashitem) as record:
+            record['failures'] += 1
 
+    def get_test_failures(self, crashitem):
+        with self._record(crashitem) as record:
+            return record['failures']
 
-def set_test_reruns(crashitem, reruns, config):
-    with failures_log_db(config) as db:
-        if crashitem in db:
-            record = db[crashitem]
-        else:
-            record = DEFAULT_RECORD
-        record['reruns'] = reruns
-        db[crashitem] = record
-        db.commit()
+    def set_test_reruns(self, crashitem, reruns):
+        with self._record(crashitem) as record:
+            record['reruns'] = reruns
 
-
-def get_test_reruns(crashitem, config):
-    with failures_log_db(config) as db:
-        if crashitem in db:
-            return db[crashitem]['reruns']
-        else:
-            return 3
+    def get_test_reruns(self, crashitem):
+        with self._record(crashitem) as record:
+            return record['reruns']
 
 
 def pytest_handlecrashitem(crashitem, report, sched):
     """
     Return the crashitem from pending and collection.
     """
-    reruns = get_test_reruns(crashitem, sched.config)
-    if get_test_failures(crashitem, sched.config) < reruns - 1:
+    db = log_db(sched.config)
+    reruns = db.get_test_reruns(crashitem)
+    if db.get_test_failures(crashitem) < reruns:
         sched.mark_test_pending(crashitem)
         report.outcome = "rerun"
 
-    add_test_failure(crashitem, sched.config)
+    db.add_test_failure(crashitem)
 
 
 def pytest_runtest_protocol(item, nextitem):
@@ -365,10 +364,11 @@ def pytest_runtest_protocol(item, nextitem):
     parallel = not is_master(item.config)
     item_location = item.location
     item_location_str = (item_location[0] + '::' + item_location[2]).replace('\\', '/')
-    item.execution_count = get_test_failures(item_location_str, item.session.config)
-    set_test_reruns(item_location_str, reruns, item.session.config)
+    db = log_db(item.session.config)
+    item.execution_count = db.get_test_failures(item_location_str)
+    db.set_test_reruns(item_location_str, reruns)
 
-    if item.execution_count >= reruns:
+    if item.execution_count > reruns:
         return True
 
     need_to_run = True
